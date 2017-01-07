@@ -28,12 +28,10 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org>
 */
 
-
 #import win32 "sys/windows.odin" when ODIN_OS == "windows";
 #import util "win32_util.odin" when ODIN_OS == "windows";
 #import "os.odin";
 #import "fmt.odin";
-#import "mem.odin";
 
 atoi :: proc(a : string) -> i64 {
     r : i64 = 0;

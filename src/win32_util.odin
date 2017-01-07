@@ -1,8 +1,6 @@
 #foreign_system_library "winmm" when ODIN_OS == "windows";
 #foreign_system_library "shell32" when ODIN_OS == "windows";
 #import win32 "sys/windows.odin" when ODIN_OS == "windows";
-#import "fmt.odin";
-#import "utf8.odin";
 
 timeGetTime :: proc() -> u32 #foreign #dll_import 
 GetSystemTimeAsFileTime :: proc(SystemTimeAsFileTime : ^win32.FILETIME) #foreign #dll_import
