@@ -60,6 +60,8 @@ graph :: struct #ordered {
 }
 
 MAGIC_VALUE :: 0xCA5E713F;
+// New magic value 0x185EA137 (otime v2)
+// Old magic value 0xCA5E713F (ctime, otime v1)
 
 timing_file_header :: struct #ordered {
     MagicValue : u32;
