@@ -1,7 +1,4 @@
 /*
-Original ctime concept and code by Casey Muratori
-Odin rewrite by Mikkel Hjortshoej
-
 This is free and unencumbered software released into the public domain.
 
 Anyone is free to copy, modify, publish, use, compile, sell, or
@@ -58,41 +55,55 @@ GRAPH_WIDTH  :: 30;
 graph :: struct #ordered {
     buckets : [GRAPH_WIDTH]stat_group;
 }
-
-MAGIC_VALUE :: 0xCA5E713F;
 // New magic value 0x185EA137 (otime v2)
 // Old magic value 0xCA5E713F (ctime, otime v1)
+MAGIC_VALUE         :: 0x185EA137;
+MARKER_MAGIC_VALUE  :: 0x1204E;
+ENTRY_MAGIC_VALUE   :: 0x11ADE2;
 
-timing_file_header :: struct #ordered {
+file_header :: struct #ordered {
     MagicValue : u32;
+    AverageMS : u32;
+
+    TotalEntries : u32;
 }
 
-timing_file_date :: struct #ordered {
+file_date :: struct #ordered {
     E : [2]u32;
 }
 
-timing_file_entry_flag :: enum {
+entry_flag :: enum {
     Complete = 0x1,
     NoErrors = 0x2,
 }
 
-timing_file_entry :: struct #ordered {
-    StartDate : timing_file_date;
+file_entry :: struct #ordered {
+    StartDate : file_date;
     Flags : u32;
     MillisecondsElapsed : u32;
+    MarkerCount : u32;
+    MagicValue : u32; // Important that this is in the bottom
 }
 
-timing_entry_array :: struct #ordered {
+file_entry_marker :: struct {
+    MillisecondsElapsed : u32;
+    Complete : bool;
+    Name : string;
+    MarkerOffset : u32;
+    MagicValue : u32; // Important that this is in the bottom
+}
+
+entry_array :: struct #ordered {
     //EntryCount : i32; Not needed in Odin
-    Entries : []timing_file_entry;
+    Entries : []file_entry;
 }
 
 GetClock :: proc () -> u32 {
     return util.timeGetTime();
 }
 
-GetDate :: proc() -> timing_file_date {
-    Result : timing_file_date;
+GetDate :: proc() -> file_date {
+    Result : file_date;
     FileTime : win32.FILETIME;
     util.GetSystemTimeAsFileTime(^FileTime);
 
@@ -102,7 +113,7 @@ GetDate :: proc() -> timing_file_date {
     return Result;
 }
 
-PrintDate :: proc(date : timing_file_date) {
+PrintDate :: proc(date : file_date) {
     FileTime := win32.FILETIME{date.E[0], date.E[1]};
     SystemTime : util.SYSTEMTIME;
 
@@ -114,14 +125,14 @@ PrintDate :: proc(date : timing_file_date) {
                SystemTime.Hour, SystemTime.Minute, SystemTime.Second); // HOW
 }
 
-MillisecondDifference :: proc(a : timing_file_date, b : timing_file_date) -> f64 {
+MillisecondDifference :: proc(a : file_date, b : file_date) -> f64 {
     a64 := (a.E[1] << 32 | a.E[0]) as i64;
     b64 := (b.E[1] << 32 | b.E[0]) as i64;
 
     return (a64 - b64) as f64 * 0.0001;
 }
 
-DayIndex :: proc(a : timing_file_date) -> u32 {
+DayIndex :: proc(a : file_date) -> u32 {
     FileTime := win32.FILETIME{a.E[0], a.E[1]};
     SystemTime : util.SYSTEMTIME;
 
@@ -143,25 +154,27 @@ Usage :: proc() {
     fmt.fprintln(os.stderr, "OTime v1.0 by Mikkel Hjortshoej");
     fmt.fprintln(os.stderr, "This tool is a rewrite of CTime by Casey Muratori in Odin");
     fmt.fprintln(os.stderr, "Usage:");
-    fmt.fprintln(os.stderr, "  otime -begin <timing file>");
-    fmt.fprintln(os.stderr, "  otime -end <timing file> [error level]");
-    fmt.fprintln(os.stderr, "  otime -stats <timing file>");
-    fmt.fprintln(os.stderr, "  otime -csv <timing file>");
+    fmt.fprintln(os.stderr, "  OTime -start <timing file>");
+    fmt.fprintln(os.stderr, "  OTime -marker start <marker name> <timing file>");
+    fmt.fprintln(os.stderr, "  OTime -marker end <marker name> <timing file>");
+    fmt.fprintln(os.stderr, "  OTime -end <timing file> [error level]");
+    fmt.fprintln(os.stderr, "  OTime -stats <timing file>");
+    fmt.fprintln(os.stderr, "  OTime -csv <timing file>");
 }
 
-ReadAllEntries :: proc(handle : os.Handle) -> timing_entry_array {
-    Result : timing_entry_array;
-    EntriesBegin : i64 = size_of(timing_file_header);
+ReadAllEntries :: proc(handle : os.Handle) -> entry_array {
+    Result : entry_array;
+    EntriesBegin : i64 = size_of(file_header);
     FileSize, _ := os.seek(handle, 0, 2);
     if FileSize > 0 {
         EntriesSize := FileSize  - EntriesBegin; 
-        Result.Entries = new_slice(timing_file_entry, EntriesSize / size_of(timing_file_entry));
+        Result.Entries = new_slice(file_entry, EntriesSize / size_of(file_entry));
         if(Result.Entries.data != nil) {
             os.seek(handle, EntriesBegin, 0);
             buf := new_slice(byte, EntriesSize);
             readSize, err := os.read(handle, buf);
-            Result.Entries.data = buf.data as ^timing_file_entry;
-            Result.Entries.count = (EntriesSize / size_of(timing_file_entry)) as int;
+            Result.Entries.data = buf.data as ^file_entry;
+            Result.Entries.count = (EntriesSize / size_of(file_entry)) as int;
 
             if readSize as i64 != EntriesSize {
                 fmt.fprintln(os.stderr, "ERROR: Unable to read timing entries from file.");
@@ -176,22 +189,22 @@ ReadAllEntries :: proc(handle : os.Handle) -> timing_entry_array {
     return Result;
 }
 
-FreeAllEntries :: proc(array : timing_entry_array) {
+FreeAllEntries :: proc(array : entry_array) {
     free(array.Entries.data);
     array.Entries.count = 0;
 }
 
-CSV :: proc(array : timing_entry_array, timingFileName : string) {
+CSV :: proc(array : entry_array, timingFileName : string) {
     fmt.printf("% Timings\n", timingFileName);
     fmt.println("ordinal, date, duration, status");
     while i := 0; i < array.Entries.count {
         entry := array.Entries[i];
         fmt.printf("%, ", i);
         PrintDate(entry.StartDate);
-        if entry.Flags & timing_file_entry_flag.Complete as u32 == timing_file_entry_flag.Complete as u32  {
+        if entry.Flags & entry_flag.Complete as u32 == entry_flag.Complete as u32  {
             fmt.printf(", %0.3fs, %", entry.MillisecondsElapsed as f64 / 1000.0,
-                    if entry.Flags & timing_file_entry_flag.NoErrors as u32 == 
-                       timing_file_entry_flag.NoErrors as u32 
+                    if entry.Flags & entry_flag.NoErrors as u32 == 
+                       entry_flag.NoErrors as u32 
                     { give "succeeded" } 
                     else 
                     { give "failed" }); // precision
@@ -265,7 +278,7 @@ PrintStatGroup :: proc(title : string, group : ^stat_group) {
     }
 }
 
-UpdateStatGroup :: proc(group : ^stat_group, entry : ^timing_file_entry) {
+UpdateStatGroup :: proc(group : ^stat_group, entry : ^file_entry) {
     if group.slowestMS < entry.MillisecondsElapsed {
         group.slowestMS = entry.MillisecondsElapsed;
     }
@@ -364,7 +377,7 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
     fmt.println(" 0");
 }
 
-Stats :: proc(array : timing_entry_array, timingFileName : string) {
+Stats :: proc(array : entry_array, timingFileName : string) {
     withErrors : stat_group;
     noErrors : stat_group;
     allStats : stat_group;
@@ -400,12 +413,12 @@ Stats :: proc(array : timing_entry_array, timingFileName : string) {
     daySpan += 1;
 
     while i := 0; i < array.Entries.count {
-        entry : ^timing_file_entry = ^array.Entries[i];
-        if(entry.Flags & timing_file_entry_flag.Complete as u32) ==
-           timing_file_entry_flag.Complete as u32 {
+        entry : ^file_entry = ^array.Entries[i];
+        if(entry.Flags & entry_flag.Complete as u32) ==
+           entry_flag.Complete as u32 {
             group : ^stat_group;
-            if (entry.Flags & timing_file_entry_flag.NoErrors as u32) ==
-                timing_file_entry_flag.NoErrors as u32 {
+            if (entry.Flags & entry_flag.NoErrors as u32) ==
+                entry_flag.NoErrors as u32 {
                 group = ^noErrors;
             } else {
                 group = ^withErrors;
@@ -459,11 +472,10 @@ Stats :: proc(array : timing_entry_array, timingFileName : string) {
 main :: proc () {
     entryClock := GetClock(); 
     args := util.GetCommandLineArguments();
-    if args.count == 3 || args.count == 4 {
+    if args.count == 3 || args.count == 4 || args.count == 5{
         mode := args[1];
-        modeIsBegin := mode == "-begin";
         timingFileName := args[2];
-        header : timing_file_header;
+        header : file_header;
         
         to_c_string :: proc(s: string) -> []byte {
             c := new_slice(byte, s.count+1);
@@ -474,16 +486,16 @@ main :: proc () {
 
         handle, err := os.open(timingFileName, os.O_RDWR, 0);
         if err == 0 {
-            buf : [size_of(timing_file_header)]byte;
+            buf : [size_of(file_header)]byte;
             b, err := os.read(handle, buf[:]);
-            header = (^buf[0] as ^timing_file_header)^;
+            header = (^buf[0] as ^file_header)^;
             if header.MagicValue != MAGIC_VALUE {
                 fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%\" is actually a ctime-compatible file.\n", timingFileName);
 
                 os.close(handle);
                 handle = -1;
             }
-        } else if modeIsBegin {
+        } else if mode == "-start" {
             handle, err = os.open(timingFileName, os.O_RDWR|os.O_CREAT, 0); // create the missing file
             if err == 0 {
                 header.MagicValue = MAGIC_VALUE;
@@ -493,7 +505,7 @@ main :: proc () {
                 buf.count = size_of_val(header);
                 written, err := os.write(handle, buf);
 
-                if written != size_of(timing_file_header) {
+                if written != size_of(file_header) {
                     fmt.fprintf(os.stderr, "ERROR: Unable to write header to \"%\".\n", timingFileName);
                 }
             } else {
@@ -502,10 +514,12 @@ main :: proc () {
         }
 
         if handle != os.INVALID_HANDLE {
-            if modeIsBegin {
-                new : timing_file_entry;
+            if mode == "-start" {
+                new : file_entry;
                 new.StartDate = GetDate();
                 new.MillisecondsElapsed = GetClock();
+                new.MagicValue = ENTRY_MAGIC_VALUE;
+                new.MarkerCount = 0;
 
                 fp, _ := os.seek(handle, 0, 2);
                 buf : []byte;
@@ -517,16 +531,39 @@ main :: proc () {
                     fmt.fprintf(os.stderr, "ERROR: Unable to append new entry to file \"%\".\n", timingFileName);
                 }
             } else if mode == "-end" {
-                seek, err := os.seek(handle, -size_of(timing_file_entry), 2);
-                buf : [size_of(timing_file_entry)]byte;
-                read, err1 := os.read(handle, buf[:]);
-                last := (^buf[0] as ^timing_file_entry)^ as timing_file_entry;
-                if (seek >= 0) &&
-                   (read) == size_of(timing_file_entry) {
-                    if (last.Flags & timing_file_entry_flag.Complete as u32) != timing_file_entry_flag.Complete as u32 {
+                //Check Magic Value
+                seek, _ := os.seek(handle, -size_of(u32), 2);
+                buf : [size_of(u32)]byte;
+                read, _ := os.read(handle, buf[:]);
+                value := (^buf[0] as ^u32)^ as u32;
+
+                offset : i64 = 0;
+
+                if value != ENTRY_MAGIC_VALUE {
+                    if value == MARKER_MAGIC_VALUE {
+                        seek, _ = os.seek(handle, -size_of(file_entry_marker), 2);
+                        entry_buf : [size_of(file_entry_marker)]byte;
+                        read, _ = os.read(handle, entry_buf[:]);
+                        marker := (^entry_buf[0] as ^file_entry_marker)^ as file_entry_marker;
+
+                        offset = -marker.MarkerOffset as i64;
+                    } else {
+                        fmt.fprintf(os.stderr, "ERROR: Unable to read last entry or marker from file \"%\".\n", timingFileName);
+                        return;
+                    }
+                }
+
+                offset -= size_of(file_entry);
+                seek, _ = os.seek(handle, offset, 2);
+                entry_buf : [size_of(file_entry)]byte;
+                read, _ = os.read(handle, entry_buf[:]);
+                last := (^entry_buf[0] as ^file_entry)^ as file_entry;
+
+                if (seek >= 0) && (read) == size_of(file_entry) {
+                    if (last.Flags & entry_flag.Complete as u32) != entry_flag.Complete as u32 {
                         startClockD := last.MillisecondsElapsed;
                         endClockD := entryClock;
-                        last.Flags |= timing_file_entry_flag.Complete as u32;
+                        last.Flags |= entry_flag.Complete as u32;
                         
                         last.MillisecondsElapsed = 0;
                         if startClockD < endClockD {
@@ -534,15 +571,15 @@ main :: proc () {
                         }
 
                         if args.count == 3 || (args.count == 4 && (atoi(args[3]) == 0)) {
-                            last.Flags |= timing_file_entry_flag.NoErrors as u32;
+                            last.Flags |= entry_flag.NoErrors as u32;
                         }
 
-                        fp, _ := os.seek(handle, -size_of(timing_file_entry), 2);
+                        fp, _ := os.seek(handle, -size_of(file_entry), 2);
                         
                         buf : []byte;
                         buf.data = ^last as ^byte;
                         buf.count = size_of_val(last);
-                        written, err := os.write(handle, buf);
+                        written, _ := os.write(handle, buf);
                         
                         if (fp >= 0) &&
                            (written == size_of_val(last)) {
@@ -558,6 +595,18 @@ main :: proc () {
                } else {
                     fmt.fprintf(os.stderr, "ERROR: Unable to read last entry from file \"%\".\n", timingFileName);
                }
+            } else if mode == "-marker" {
+                if(args.count != 5) {
+                    fmt.fprint(os.stderr, "Not enough arguments provided for -marker ie. -maker <start or end> <marker name> <timing file>");
+                }
+
+                isStart := args[2] == "start";
+                if isStart {
+                    
+                } else {
+
+                }
+
             } else if mode == "-stats" {
                 array := ReadAllEntries(handle);
                 Stats(array, timingFileName);
