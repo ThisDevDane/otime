@@ -71,7 +71,7 @@ file_date :: struct #ordered {
     E : [2]u32,
 }
 
-entry_flag :: enum {
+entry_flag :: enum u32 {
     Complete = 0x1,
     NoErrors = 0x2,
 }
@@ -179,7 +179,7 @@ ReadAllEntries :: proc(handle : os.Handle) -> entry_array {
                 fmt.fprintln(os.stderr, "ERROR: Unable to read timing entries from file.");
             }
         } else {
-            fmt.fprintf(os.stderr, "ERROR: Unable to allocate % for storing timing entries.\n", EntriesSize);
+            fmt.fprintf(os.stderr, "ERROR: Unable to allocate %v for storing timing entries.\n", EntriesSize);
         }
     } else {
         fmt.fprintln(os.stderr, "ERROR: Unable to determine file size of timing file.");
@@ -194,14 +194,14 @@ FreeAllEntries :: proc(array : entry_array) {
 }
 
 CSV :: proc(array : entry_array, timingFileName : string) {
-    fmt.printf("% Timings\n", timingFileName);
+    fmt.printf("%s Timings\n", timingFileName);
     fmt.println("ordinal, date, duration, status");
     for i := 0; i < array.Entries.count; i += 1 {
         entry := array.Entries[i];
-        fmt.printf("%, ", i);
+        fmt.printf("%v, ", i);
         PrintDate(entry.StartDate);
         if entry.Flags & entry_flag.Complete == entry_flag.Complete  {
-            fmt.printf(", %0.3fs, %", cast(f64)entry.MillisecondsElapsed / 1000.0,
+            fmt.printf(", %0.3fs, %v", cast(f64)entry.MillisecondsElapsed / 1000.0,
                     if entry.Flags & entry_flag.NoErrors == entry_flag.NoErrors 
                     { give "succeeded" } 
                     else 
@@ -222,9 +222,9 @@ time_part :: struct {
 PrintTime :: proc(milliseconds : f64) {
     MillisecondsPerSecond : f64 = 1000;
     MillisecondsPerMinute : f64 = 60*MillisecondsPerSecond;
-    MillisecondsPerHour : f64   = 60*MillisecondsPerMinute;
-    MillisecondsPerDay : f64    = 24*MillisecondsPerHour;
-    MillisecondsPerWeek : f64   = 7*MillisecondsPerDay;
+    MillisecondsPerHour   : f64 = 60*MillisecondsPerMinute;
+    MillisecondsPerDay    : f64 = 24*MillisecondsPerHour;
+    MillisecondsPerWeek   : f64 = 7*MillisecondsPerDay;
 
     parts := new_slice(time_part, 4);
     parts[0].name = "week"; 
@@ -244,17 +244,17 @@ PrintTime :: proc(milliseconds : f64) {
         msPer := part.millisecondsPer;
         this := cast(f64)(cast(int)(q / msPer));
         if this > 0 {
-            fmt.printf("% % %, ", cast(i32)this, part.name, if this != 1 {give "s"} else {give ""}); 
+            fmt.printf("%d %s%s, ", cast(i32)this, part.name, if this != 1 {give "s"} else {give ""}); 
         }
 
         q -= this*msPer;
     }
 
-    fmt.printf("% seconds", cast(f64)q / 1000.0);
+    fmt.printf("%v seconds", cast(f64)q / 1000.0);
 }
 
 PrintTimeStat :: proc(name : string, milliseconds : u32) {
-    fmt.printf("%: ", name);
+    fmt.printf("%s: ", name);
     PrintTime(cast(f64)milliseconds);
     fmt.println();
 }
@@ -266,7 +266,7 @@ PrintStatGroup :: proc(title : string, group : ^stat_group) {
     }
 
     if group.count > 0 {
-        fmt.printf("% (%):\n", title, group.count);
+        fmt.printf("%s (%v):\n", title, group.count);
         PrintTimeStat("  Slowest", group.slowestMS);
         PrintTimeStat("  Fastest", group.fastestMS);
         PrintTimeStat("  Average", averageMS);
@@ -304,7 +304,7 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
     }
     
     dpb := daySpan / GRAPH_WIDTH;
-    fmt.printf("\n% (% day%/bucket):\n", title, dpb, if dpb == 1 {give ""} else {give "s"});
+    fmt.printf("\n%s (%v day%s/bucket):\n", title, dpb, if dpb == 1 {give ""} else {give "s"});
 
     MapToDiscrete :: proc(value : f64, inMax : f64, outMax : f64) -> i32 {
         if inMax == 0 {
@@ -316,17 +316,17 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
     }
 
     for lineIndex : i32 = GRAPH_HEIGHT - 1; lineIndex >= 0; lineIndex -= 1 {
-        fmt.printf("%", "|");
+        fmt.printf("%r", '|');
         for i := 0; i < graph.buckets.count; i += 1 {
             group := graph.buckets[i];
             this : i32 = -1;
             if group.count > 0 {
                 this = MapToDiscrete(cast(f64)group.slowestMS, cast(f64)slowestMS, GRAPH_HEIGHT - 1);
             }
-            fmt.printf("%", if this >= lineIndex {give "*"} else {give " "});
+            fmt.printf("%r", if this >= lineIndex {give '*'} else {give ' '});
         }
         if lineIndex == (GRAPH_HEIGHT - 1) {
-            fmt.printf("%", " ");
+            fmt.printf("%r", ' ');
             PrintTime(cast(f64)slowestMS);
         }
         fmt.println();
@@ -334,10 +334,10 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
         
     }
 
-    fmt.printf("%", "+");
+    fmt.printf("%r", '+');
 
     for i in 0..<GRAPH_WIDTH {
-        fmt.printf("%", "-");
+        fmt.printf("%r", '-');
     }
 
     fmt.print(' ');
@@ -347,26 +347,26 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
     fmt.println();
 
     for lineIndex : i32 = GRAPH_HEIGHT - 1; lineIndex >= 0; lineIndex -= 1 {
-        fmt.printf("%", "|");
+        fmt.printf("%r", '|');
         for i := 0; i < graph.buckets.count; i += 1 {
             group := graph.buckets[i];
             this : i32 = -1;
             if group.count > 0 {
                 this = MapToDiscrete(cast(f64)group.count, cast(f64)maxCountInBucket, GRAPH_HEIGHT - 1);
             }
-            fmt.printf("%", if this >= lineIndex {give "*"} else {give " "});
+            fmt.printf("%r", if this >= lineIndex {give '*'} else {give ' '});
         }
 
         if lineIndex == (GRAPH_HEIGHT - 1) {
-            fmt.printf(" %", maxCountInBucket);
+            fmt.printf(" %v", maxCountInBucket);
         }
         fmt.println();
         
     }
 
-    fmt.printf("%", "+");
+    fmt.printf("%r", '+');
     for i in 0..<GRAPH_WIDTH {
-        fmt.printf("%", "-");
+        fmt.printf("%r", '-');
     }
     fmt.println(" 0");
 }
@@ -443,11 +443,11 @@ Stats :: proc(array : entry_array, timingFileName : string) {
         }
     }
 
-    fmt.printf("\n% Statistics\n\n", timingFileName);
-    fmt.printf("Total complete timings: %\n", withErrors.count + noErrors.count);
-    fmt.printf("Total incomplete timings: %\n", incompleteCount);
-    fmt.printf("Days with timings: %\n", daysWithTimingCount);
-    fmt.printf("Days between first and last timing: %\n", daySpanCount);
+    fmt.printf("\n%s Statistics\n\n", timingFileName);
+    fmt.printf("Total complete timings: %v\n", withErrors.count + noErrors.count);
+    fmt.printf("Total incomplete timings: %v\n", incompleteCount);
+    fmt.printf("Days with timings: %v\n", daysWithTimingCount);
+    fmt.printf("Days between first and last timing: %v\n", daySpanCount);
     PrintStatGroup("Timings marked successful", ^noErrors);
     PrintStatGroup("Timings marked failed", ^withErrors);
 
@@ -524,7 +524,7 @@ main :: proc () {
             b, err := os.read(handle, buf[:]);
             header = (cast(^file_header)^buf[0])^;
             if header.MagicValue != MAGIC_VALUE {
-                fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%\" is actually a ctime-compatible file.\n", timingFileName);
+                fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is actually a ctime-compatible file.\n", timingFileName);
 
                 os.close(handle);
                 handle = -1;
@@ -540,10 +540,10 @@ main :: proc () {
                 written, err := os.write(handle, buf);
 
                 if written != size_of(file_header) {
-                    fmt.fprintf(os.stderr, "ERROR: Unable to write header to \"%\".\n", timingFileName);
+                    fmt.fprintf(os.stderr, "ERROR: Unable to write header to \"%s\".\n", timingFileName);
                 }
             } else {
-                 fmt.fprintf(os.stderr, "ERROR: Unable to create timing file \"%\".\n", timingFileName);
+                 fmt.fprintf(os.stderr, "ERROR: Unable to create timing file \"%s\".\n", timingFileName);
             }
         }
 
@@ -562,7 +562,7 @@ main :: proc () {
                 written, _ := os.write(handle, buf);
                 if (fp < 0) && 
                    (written != size_of_val(new)) {
-                    fmt.fprintf(os.stderr, "ERROR: Unable to append new entry to file \"%\".\n", timingFileName);
+                    fmt.fprintf(os.stderr, "ERROR: Unable to append new entry to file \"%s\".\n", timingFileName);
                 }
             } else if mode == "-end" {
                 //Check Magic Value
@@ -582,7 +582,7 @@ main :: proc () {
 
                         offset = cast(i64)-marker.MarkerOffset;
                     } else {
-                        fmt.fprintf(os.stderr, "ERROR: Unable to read last entry or marker from file \"%\".\n", timingFileName);
+                        fmt.fprintf(os.stderr, "ERROR: Unable to read last entry or marker from file \"%s\".\n", timingFileName);
                         return;
                     }
                 }
@@ -619,15 +619,15 @@ main :: proc () {
                            (written == size_of_val(last)) {
                             fmt.print("OTIME: ");
                             PrintTime(cast(f64)last.MillisecondsElapsed);
-                            fmt.printf(" (%)\n", timingFileName);
+                            fmt.printf(" (%s)\n", timingFileName);
                         } else {
-                            fmt.fprintf(os.stderr, "ERROR: Unable to rewrite last entry to file \"%\".\n", timingFileName);
+                            fmt.fprintf(os.stderr, "ERROR: Unable to rewrite last entry to file \"%s\".\n", timingFileName);
                         }
                     } else {
-                        fmt.fprintf(os.stderr, "ERROR: Last entry in file \"%\" is already closed - unbalanced/overlapped calls?\n", timingFileName);
+                        fmt.fprintf(os.stderr, "ERROR: Last entry in file \"%s\" is already closed - unbalanced/overlapped calls?\n", timingFileName);
                     }
                } else {
-                    fmt.fprintf(os.stderr, "ERROR: Unable to read last entry from file \"%\".\n", timingFileName);
+                    fmt.fprintf(os.stderr, "ERROR: Unable to read last entry from file \"%s\".\n", timingFileName);
                }
             } else if mode == "-marker" {
                 if(args.count != 5) {
@@ -650,13 +650,13 @@ main :: proc () {
                 CSV(array, timingFileName);
                 FreeAllEntries(array);
             } else {
-                fmt.fprintf(os.stderr, "ERROR: Unrecognized command \"%\".\n", mode);
+                fmt.fprintf(os.stderr, "ERROR: Unrecognized command \"%s\".\n", mode);
             }
 
             os.close(handle);
             handle = -1;
         } else {
-            fmt.fprintf(os.stderr, "ERROR: Cannnot open file \"%\".\n", timingFileName);
+            fmt.fprintf(os.stderr, "ERROR: Cannnot open file \"%s\".\n", timingFileName);
         }
     } else {
         Usage();
