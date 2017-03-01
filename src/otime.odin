@@ -80,8 +80,8 @@ GetCommandLineArguments :: proc() -> []string {
 
 atoi :: proc(a : string) -> i64 {
     r : i64 = 0;
-    sign := if a[0] == '-' {give -1} else {give 1};
-    i := if sign == -1 {give 1} else {give 0};
+    sign := a[0] == '-' ? -1 : 1; 
+    i := sign == -1 ? 1 : 0;
 
     for val, idx in 0..<a.count {
         r = r*10 + cast(i64)a[idx] - '0';
@@ -232,11 +232,7 @@ CSV :: proc(array : timing_entry_array, timingFileName : string) {
         PrintDate(entry.StartDate);
         if entry.Flags & cast(u32)timing_file_entry_flag.Complete == cast(u32)timing_file_entry_flag.Complete {
             fmt.printf(", %fs, %s", cast(f64)entry.MillisecondsElapsed / 1000.0,
-                    if entry.Flags & cast(u32)timing_file_entry_flag.NoErrors == 
-                       cast(u32)timing_file_entry_flag.NoErrors 
-                    { give "succeeded" } 
-                    else 
-                    { give "failed" }); // precision
+                    entry.Flags & cast(u32)timing_file_entry_flag.NoErrors ==  cast(u32)timing_file_entry_flag.NoErrors ? "succeeded" : "failed");
         } else {
             fmt.print(", (never completed), failed");
         }
@@ -275,7 +271,7 @@ PrintTime :: proc(milliseconds : f64) {
         msPer := part.millisecondsPer;
         this := cast(f64)(cast(int)(q / msPer));
         if this > 0 {
-            fmt.printf("%d %s %s, ", cast(i32)this, part.name, if this != 1 {give "s"} else {give ""}); 
+            fmt.printf("%d %s %s, ", cast(i32)this, part.name, this != 1 ? "s" : ""); 
         }
 
         q -= this*msPer;
@@ -335,7 +331,7 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
     }
     
     dpb := daySpan / GRAPH_WIDTH;
-    fmt.printf("\n%s (%f day%s/bucket):\n", title, dpb, if dpb == 1 {give ""} else {give "s"});
+    fmt.printf("\n%s (%f day%s/bucket):\n", title, dpb, dpb == 1 ? "" : "s");
 
     MapToDiscrete :: proc(value : f64, inMax : f64, outMax : f64) -> i32 {
         if inMax == 0 {
@@ -354,7 +350,7 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
             if group.count > 0 {
                 this = MapToDiscrete(cast(f64)group.slowestMS, cast(f64)slowestMS, GRAPH_HEIGHT - 1);
             }
-            fmt.printf("%r", if this >= lineIndex {give '*'} else {give ' '});
+            fmt.printf("%r", this >= lineIndex ? '*' : ' ');
         }
         if lineIndex == (GRAPH_HEIGHT - 1) {
             fmt.printf("%r", ' ');
@@ -383,7 +379,7 @@ PrintGraph :: proc(title : string, daySpan : f64, graph : ^graph) {
             if group.count > 0 {
                 this = MapToDiscrete(cast(f64)group.count, cast(f64)maxCountInBucket, GRAPH_HEIGHT - 1);
             }
-            fmt.printf("%r", if this >= lineIndex {give '*'} else {give ' '});
+            fmt.printf("%r", this >= lineIndex ? '*' : ' ');
         }
 
         if lineIndex == (GRAPH_HEIGHT - 1) {
