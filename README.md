@@ -1,4 +1,4 @@
-# Otime
+![scrshot](https://otime.handmade.network/static/media/projects/dark-logo/otime.png?v=71663)  
 This program is a spirital successor for Casey Muratori's Ctime written in Odin
 ```
 otime -stats jaze.otm
