@@ -1,0 +1,28 @@
+{
+    "folders":
+    [
+        {
+            "name": "Otime: Source",
+            "path": "./src",
+            "file_exclude_patterns": [ "*.ll", "*.bc" ],
+        },
+        {
+            "name": "Otime: Main",
+            "path": ".",
+            "file_exclude_patterns": [ "nohup.out", "*.ll", "*.bc", "*.otm" ],
+            "folder_exclude_patterns": [ "build", "src"],
+        },
+        {
+            "name": "Otime: Build",
+            "path": "./build",
+        },
+        {
+            "name": "Mantle",
+            "path": "../odin-mantle",
+        },
+        {
+            "name": "Odin Compiler: Core",
+            "path": "../../Odin/core",
+        },
+    ]
+}

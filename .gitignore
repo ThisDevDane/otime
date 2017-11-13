@@ -1,16 +1,8 @@
 ### Custom ###
-*.ll
-*.obj
-*.bc
-*.exe
-
-*.bat
-
 *.ctm
 *.otm
-
-build/
-
+[Bb]uild/
+nohup.out
 
 # Created by https://www.gitignore.io/api/windows,sublimetext
 ### Windows ###
