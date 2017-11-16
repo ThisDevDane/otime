@@ -6,7 +6,7 @@
  *  @Creation: 13-11-2017 17:06:40
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 16-11-2017 01:28:37
+ *  @Last Time: 16-11-2017 03:02:24
  *  
  *  @Description:
  *      Functionality requires to convert ctime files to otm1 files
@@ -17,6 +17,7 @@ import "core:fmt.odin";
 import "core:raw.odin";
 
 import "otm1.odin";
+using import "otime_err.odin";
 
 MAGIC_VALUE :: 0xCA5E713F; 
 
@@ -51,49 +52,48 @@ validate_as_ctime :: proc(file_handle : os.Handle) -> bool {
     }
 }
 
-convert_to_otm1 :: proc(file_handle : os.Handle, name : string) -> (bool, otm1.Header, []otm1.Entry) {
+convert_to_otm1 :: proc(file_handle : os.Handle, name : string) -> (Err, otm1.Header, []otm1.Entry) {
     ///Create backup
     size, err := os.file_size(file_handle);
     if err != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_READ_FAILED, otm1.Header{}, nil;
     }
 
     old_data := make([]u8, size);
     _, err = os.seek(file_handle, 0, 0);
     if err != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_READ_FAILED, otm1.Header{}, nil;
     }
     _, err = os.read(file_handle, old_data);
     if err != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_READ_FAILED, otm1.Header{}, nil;
     }
 
     str := fmt.aprintf("%s.old", name);
     h, e := os.open(str, os.O_CREATE | os.O_RDWR);
     free(str);
     if e != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_OPEN_FAILED, otm1.Header{}, nil;
     }
     _, err = os.write(h, old_data);
     free(old_data);
     if err != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_WRITE_FAILED, otm1.Header{}, nil;
     }
 
     data_start, ok := os.seek(file_handle, size_of(Header), 0);
     if ok != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_READ_FAILED, otm1.Header{}, nil;
     }
     entries_bytes := make([]u8, size - data_start);
     _, ok = os.read(file_handle, entries_bytes);
     if ok != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_READ_FAILED, otm1.Header{}, nil;
     }
     os.close(file_handle);
-    
     file_handle, err = os.open(name, os.O_RDWR | os.O_TRUNC);
     if err != 0 {
-        return false, otm1.Header{}, nil;
+        return ERR_OPEN_FAILED, otm1.Header{}, nil;
     }
     header := otm1.Header{};
     header.magic = otm1.MAGIC_VALUE;
@@ -125,5 +125,5 @@ convert_to_otm1 :: proc(file_handle : os.Handle, name : string) -> (bool, otm1.H
         header.timing_count += 1;
     }
 
-    return true, header, entries;
+    return ERR_OK, header, entries;
 }

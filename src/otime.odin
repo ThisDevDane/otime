@@ -6,7 +6,7 @@
  *  @Creation: 13-11-2017 01:06:46
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 16-11-2017 02:32:10
+ *  @Last Time: 16-11-2017 03:02:40
  *  
  *  @Description:
  *      A timing to file library 
@@ -25,16 +25,9 @@ import win32 "core:sys/windows.odin";
 
 import "otm1.odin"
 import ctime "ctime_convert.odin"
+export "otime_err.odin";
 
 VERSION_STR :: "v0.7.0";
-
-Err :: int;
-
-ERR_OK                   : Err : 0;
-ERR_READ_FAILED          : Err : 1; 
-ERR_WRITE_FAILED         : Err : 2; 
-ERR_ENTRY_ALREADY_CLOSED : Err : 3; 
-ERR_CONVERT_FAILED       : Err : 4; 
 
 File :: struct {
     initialized : bool,
@@ -115,7 +108,7 @@ is_convertable_file :: proc(file : ^File) -> bool {
 convert :: proc(file : ^File, to : File_Types) -> Err {
     using File_Types;
     if file.ftype == Ctime && to == Otm1 {
-        if ok, header, entries := ctime.convert_to_otm1(file.handle, file.name); ok {
+        if err, header, entries := ctime.convert_to_otm1(file.handle, file.name); err == ERR_OK {
             file.header = header;
             file.ftype = Otm1;
             write_header_to_file(file);
