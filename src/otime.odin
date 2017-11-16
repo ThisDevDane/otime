@@ -6,44 +6,41 @@
  *  @Creation: 13-11-2017 01:06:46
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 13-11-2017 18:24:17
+ *  @Last Time: 16-11-2017 01:55:10
  *  
  *  @Description:
  *      A timing to file library 
+ *
+ * J_vanRijn suggestion
+ *  If you changed that to `otime.begin('site')`, `otime.end('site')` and `otime.flush()`, 
+ *  you could have it build up a bunch of metrics for calls to a site and then explicitly flush, 
+ *  which the compilation driver would do or end might take an optional param that tells it to flush
  */
 
 import       "core:os.odin";
+import       "core:fmt.odin";
 import       "core:math.odin";
 import       "core:raw.odin";
 import win32 "core:sys/windows.odin";
 
-export "ctime_convert.odin";
+import "otm1.odin"
+import ctime "ctime_convert.odin"
 
 VERSION_STR :: "v0.7.0";
 
-OTM1_MAGIC_VALUE :: 0x4f544d31;  //Hex for "OTM1"
+Err :: int;
+
+ERR_OK                   : Err : 0;
+ERR_READ_FAILED          : Err : 1; 
+ERR_WRITE_FAILED         : Err : 2; 
+ERR_ENTRY_ALREADY_CLOSED : Err : 3; 
+ERR_CONVERT_FAILED       : Err : 4; 
 
 File :: struct {
     handle : os.Handle,
     name   : string,
-    header : File_Header,
-}
-
-File_Header :: struct #ordered {
-    magic : u32,
-    total_ms : u32,
-    timing_count : u32,
-}
-
-File_Entry_Flags :: enum u32 {
-    Complete = 1 << 1,
-    NoError  = 1 << 2,
-}
-
-File_Entry :: struct #ordered {
-    date_raw     : [2]u32, //lo, hi
-    time_elapsed : u32, //In milliseconds
-    flags        : File_Entry_Flags
+    ftype  : File_Types,
+    header : otm1.Header,
 }
 
 Stat_Group :: struct {
@@ -63,32 +60,72 @@ Parsed_Timing :: struct {
     seconds : f64,
 }
 
-validate_as_otm :: proc(file : ^File) -> bool {
-    _, ok := os.seek(file.handle, 0, 0);
-    if ok != 0 {
-        return false;
-    }
-
-    buf : [size_of(File_Header)]u8;
-    _, err := os.read(file.handle, buf[..]);
-    file.header = (cast(^File_Header)&buf[0])^;
-
-    if file.header.magic != OTM1_MAGIC_VALUE {
-        return false;
-    } else {
-        return true;
-    }
+File_Types :: enum {
+    Otm1, 
+    Ctime,
+    Unknown
 }
 
-add_new_header_to_file :: proc(file : ^File) -> bool {
-    file.header = File_Header{};
-    file.header.magic = OTM1_MAGIC_VALUE;
+get_file_type :: proc(file : ^File) -> File_Types {
+    if header, ok := otm1.validate_as_otm1(file.handle); ok {
+        file.header = header;
+        return File_Types.Otm1;
+    }
+
+    if ctime.validate_as_ctime(file.handle) {
+        return File_Types.Ctime;
+    }
+
+    return File_Types.Unknown;
+}
+
+convert :: proc(file : ^File, from : File_Types, to : File_Types) -> Err {
+    using File_Types;
+    if from == Ctime && to == Otm1 {
+        if ok, header, entries := ctime.convert_to_otm1(file.handle, file.name); ok {
+            file.header = header;
+            write_header_to_file(file);
+            for e in entries {
+                write_entry_to_file(file, e);
+            }
+            return ERR_OK;
+        } else {
+            return ERR_CONVERT_FAILED;
+        }
+    }
+
+    return ERR_CONVERT_FAILED;
+}
+
+add_new_header_to_file :: proc(file : ^File) -> Err {
+    file.header = otm1.Header{};
+    file.header.magic = otm1.MAGIC_VALUE;
 
     return write_header_to_file(file);
 }
 
-add_new_entry_to_file :: proc(file : ^File) -> bool {
-    entry := File_Entry{};
+begin :: proc(file : ^File) -> Err {
+    return add_new_entry_to_file(file);
+}
+
+end :: proc(file : ^File, err : string) -> (err : Err, ms : u32) {
+    entry, read_ok := read_last_entry_from_file(file);
+    if !read_ok {
+        return ERR_READ_FAILED, 0;
+    }
+
+    already_closed, write_ok, ms :=close_last_entry_in_file(file, entry, err);
+    if already_closed  {
+        return ERR_ENTRY_ALREADY_CLOSED, 0;
+    } else if !write_ok {
+        return ERR_WRITE_FAILED, 0;
+    } else {
+        return ERR_OK, ms;
+    }
+}
+
+add_new_entry_to_file :: proc(file : ^File) -> Err {
+    entry := otm1.Entry{};
     
     ft : win32.Filetime;
     win32.get_system_time_as_file_time(&ft);
@@ -100,39 +137,39 @@ add_new_entry_to_file :: proc(file : ^File) -> bool {
     return write_entry_to_file(file, entry);
 }
 
-write_header_to_file :: proc(file : ^File) -> bool {
+write_header_to_file :: proc(file : ^File) -> Err {
     _, ok := os.seek(file.handle, 0, 0);
     if ok != 0 {
-        return false;
+        return ERR_READ_FAILED;
     }
 
     buf := transform_to_bytes(&file.header, size_of(file.header));
     written, err := os.write(file.handle, buf);
     if written == size_of(file.header) && err == 0 {
-        return true;
+        return ERR_OK;
     } else {
-        return false;
+        return ERR_WRITE_FAILED;
     }
 }
 
-write_entry_to_file :: proc(file : ^File, entry : File_Entry) -> bool {
+write_entry_to_file :: proc(file : ^File, entry : otm1.Entry) -> Err {
     buf := transform_to_bytes(&entry, size_of(entry));
 
     _, err := os.seek(file.handle, 0, 2);
     if err != 0 {
-        return false;
+        return ERR_READ_FAILED;
     } else {
         written, err := os.write(file.handle, buf);
         if err == 0 && written == size_of(entry) {
-            return true;
+            return ERR_OK;
         } else {
-            return false;
+            return ERR_WRITE_FAILED;
         }
     }
 }
 
-close_last_entry_in_file :: proc(file : ^File, entry : File_Entry, err_level : string) -> (already_closed : bool, write_ok : bool, ms : u32) {
-    if is_entry_flag_set(entry.flags, File_Entry_Flags.Complete) {
+close_last_entry_in_file :: proc(file : ^File, entry : otm1.Entry, err_level : string) -> (already_closed : bool, write_ok : bool, ms : u32) {
+    if otm1.is_entry_flag_set(entry.flags, otm1.Entry_Flags.Complete) {
         return true, false, 0;
     }
 
@@ -145,11 +182,11 @@ close_last_entry_in_file :: proc(file : ^File, entry : File_Entry, err_level : s
     }
 
     if err_level == "0" {
-        entry.flags |= File_Entry_Flags.NoError;
+        entry.flags |= otm1.Entry_Flags.NoError;
     }
-    entry.flags |= File_Entry_Flags.Complete;
+    entry.flags |= otm1.Entry_Flags.Complete;
 
-    _, err := os.seek(file.handle, -size_of(File_Entry), 2);
+    _, err := os.seek(file.handle, -size_of(otm1.Entry), 2);
     buf := transform_to_bytes(&entry, size_of(entry));
 
     written, okw := os.write(file.handle, buf[..]);
@@ -164,54 +201,65 @@ close_last_entry_in_file :: proc(file : ^File, entry : File_Entry, err_level : s
     return false, true, entry.time_elapsed;
 }
 
-read_last_entry_from_file :: proc(file : ^File) -> (File_Entry, bool) {
-    _, err := os.seek(file.handle, -size_of(File_Entry), 2);
+read_last_entry_from_file :: proc(file : ^File) -> (otm1.Entry, bool) {
+    _, err := os.seek(file.handle, -size_of(otm1.Entry), 2);
     if err != 0 {
-        return File_Entry{}, false;
+        return otm1.Entry{}, false;
     }
-    buf : [size_of(File_Entry)]u8;
+    buf : [size_of(otm1.Entry)]u8;
     read : int;
     read, err = os.read(file.handle, buf[..]);
-    if read == size_of(File_Entry) && err == 0 {
-        entry : File_Entry = (cast(^File_Entry)&buf[0])^;
+    if read == size_of(otm1.Entry) && err == 0 {
+        entry : otm1.Entry = (cast(^otm1.Entry)&buf[0])^;
         return entry, true;
     } else {
-        return File_Entry{}, false;
+        return otm1.Entry{}, false;
     }
 }
 
-read_all_entries_from_file :: proc(file : ^File) -> ([]File_Entry, bool) {
+read_all_entries_from_file :: proc(file : ^File) -> ([]otm1.Entry, bool) {
     header_size, err := os.seek(file.handle, size_of(file.header), 0);
     if err != 0 {
         return nil, false;
     }
+        
     total_size, ok := os.seek(file.handle, 0, 2);
     if ok != 0 {
         return nil, false;
     }
-
+        
     data_size := total_size - header_size;
     _, err = os.seek(file.handle, size_of(file.header), 0);
     if err != 0 {
         return nil, false;
     }
+        
     buf := make([]u8, data_size);
+        
     _, err = os.read(file.handle, buf);
     if err != 0 {
         return nil, false;
     }
-    
+        
     raw_entries := raw.Slice{
         &buf[0],
-        len(buf) / size_of(File_Entry),
-        len(buf) / size_of(File_Entry),
+        len(buf) / size_of(otm1.Entry),
+        len(buf) / size_of(otm1.Entry),
     };
-
-    return transmute([]File_Entry)raw_entries, true;
+        
+    return transmute([]otm1.Entry)raw_entries, true;
 }
 
-gather_stat_groups :: proc(file : ^File, entries : []File_Entry) -> ([]Stat_Group, int) {
-    groups        := make([]Stat_Group, 2);
+get_stat_groups :: proc(file : ^File) -> ([]Stat_Group, int) {
+    if entries, ok := read_all_entries_from_file(file); ok {
+        return gather_stat_groups(entries);
+    } else {
+        return nil, 0;
+    }
+}
+
+gather_stat_groups :: proc(entries : []otm1.Entry) -> ([]Stat_Group, int) {
+    groups := make([]Stat_Group, 2);
 
     success_group := &groups[0];
     success_group.name = "successful";
@@ -224,12 +272,12 @@ gather_stat_groups :: proc(file : ^File, entries : []File_Entry) -> ([]Stat_Grou
     failed_group.fastest_ms = 0xFFFFFFFF;
     count_of_non_complete := 0;
     for entry in entries {
-        if !is_entry_flag_set(entry.flags, File_Entry_Flags.Complete) {
+        if !otm1.is_entry_flag_set(entry.flags, otm1.Entry_Flags.Complete) {
             count_of_non_complete += 1;
             continue;
         }
 
-        if is_entry_flag_set(entry.flags, File_Entry_Flags.NoError) {
+        if otm1.is_entry_flag_set(entry.flags, otm1.Entry_Flags.NoError) {
             add_entry_to_stat_group(success_group, entry);
         } else {
             add_entry_to_stat_group(failed_group, entry);
@@ -274,11 +322,7 @@ transform_to_bytes :: proc(ptr : rawptr, size : int) -> []u8 {
     return buf;
 }
 
-is_entry_flag_set :: proc(data : File_Entry_Flags, flag : File_Entry_Flags) -> bool {
-    return data & flag == flag;
-}
-
-add_entry_to_stat_group :: proc(group : ^Stat_Group, entry : File_Entry) {
+add_entry_to_stat_group :: proc(group : ^Stat_Group, entry : otm1.Entry) {
     group.count += 1;
     group.total_ms += entry.time_elapsed;
 
@@ -292,4 +336,3 @@ add_entry_to_stat_group :: proc(group : ^Stat_Group, entry : File_Entry) {
 
     group.average_ms = group.total_ms / u32(group.count);
 }
-

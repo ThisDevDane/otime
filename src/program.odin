@@ -6,7 +6,7 @@
  *  @Creation: 13-11-2017 01:07:05
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 13-11-2017 18:27:59
+ *  @Last Time: 16-11-2017 01:55:07
  *  
  *  @Description:
  *      Executable for the otime library. This provides the timing begin, end and stats as we know from Ctime.
@@ -53,29 +53,27 @@ print_time :: proc(name : string, ms : u32) {
     fmt.printf("%.3f %s%s\n", parsed.seconds, "second", parsed.seconds == 1 ? "" : "s");
 }
 
-end :: proc(file : ^otime.File, err : string) {
-    entry, read_ok := otime.read_last_entry_from_file(file);
-    if !read_ok {
-        fmt.fprintf(os.stderr, "ERROR: Unable to read last entry in \"%s\"\n", file.name);
-        return;
-    } 
-    already_closed, write_ok, ms := otime.close_last_entry_in_file(file, entry, err);
-    if already_closed {
-        fmt.fprintf(os.stderr, "ERROR: Last entry in \"%s\" is already closed - unbalanced/overlapped -end calls?\n", file.name);
-    } else if !write_ok {
-        fmt.fprintf(os.stderr, "ERROR: Unable to rewrite last entry in \"%s\"\n", file.name);
-    } else {
+end :: proc(file : ^otime.File, err_s : string) {
+    err, ms := otime.end(file, err_s);
+    switch err {
+    case otime.ERR_OK :
         print_time("OTIME:", ms);
         if file.header.timing_count % 10 == 0 {
             fmt.printf("OTIME: Average over %d timings:", file.header.timing_count);
             print_time("", file.header.total_ms / file.header.timing_count);
         }
+    case otime.ERR_READ_FAILED :
+        fmt.fprintf(os.stderr, "ERROR: Unable to read last entry in \"%s\"\n", file.name);
+    case otime.ERR_WRITE_FAILED :
+        fmt.fprintf(os.stderr, "ERROR: Unable to rewrite last entry in \"%s\"\n", file.name);
+    case otime.ERR_ENTRY_ALREADY_CLOSED :
+        fmt.fprintf(os.stderr, "ERROR: Last entry in \"%s\" is already closed - unbalanced/overlapped -end calls?\n", file.name);
     }
 }
 
 stats :: proc(file : ^otime.File) {
-    if entries, ok := otime.read_all_entries_from_file(file); ok {
-        stat_groups, incomplete := otime.gather_stat_groups(file, entries);
+    stat_groups, incomplete := otime.get_stat_groups(file);
+    if stat_groups != nil {
         fmt.printf("\nStats from %s.\n\n", file.name);
         fmt.printf("Total timings: %d.\n", file.header.timing_count);
         fmt.printf("Total incomplete timings: %d.\n\n", incomplete);
@@ -100,7 +98,7 @@ stats :: proc(file : ^otime.File) {
 }
 
 main :: proc() {
-    test := make([]u8, 480); //FIXME Hack to get no crash
+    make([]u8, 1); //FIXME For some reason it crashes at runtime if this is not here
     args := os.args[1..];
     if len(args) != 2 && len(args) != 3 {
         usage();
@@ -118,16 +116,16 @@ main :: proc() {
             mode = Usage_Mode.Convert;
         }
 
-        file := otime.File{};
+        file : otime.File;
         file.name = args[1]; //TODO(Hoej): Auto add extension of missing.
         ok : os.Errno; 
         file.handle, ok = os.open(file.name, os.O_RDWR);
 
         if mode != Usage_Mode.Convert {
             if ok == 0 {
-                if !otime.validate_as_otm(&file) {
+                if otime.get_file_type(&file) != otime.File_Types.Otm1 {
                     fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is a otime compatible file.\n", file.name); 
-                    if otime.validate_as_ctime(&file) {
+                    if otime.get_file_type(&file) != otime.File_Types.Ctime {
                         fmt.fprintf(os.stderr, "ERROR: This is a ctime file, please -convert it to continue usage.\n"); 
                     }
                     os.close(file.handle);
@@ -136,7 +134,7 @@ main :: proc() {
             } else if mode == Usage_Mode.Begin {
                 file.handle, ok = os.open(file.name, os.O_RDWR | os.O_CREATE);
                 if ok == 0 {
-                    if !otime.add_new_header_to_file(&file) {
+                    if otime.add_new_header_to_file(&file) != otime.ERR_OK {
                         fmt.fprintf(os.stderr, "ERROR: Unable to write header to \"%s\"\n", file.name);
                     }
                 } else {
@@ -148,7 +146,7 @@ main :: proc() {
         if file.handle != os.INVALID_HANDLE {
             switch mode {
             case Usage_Mode.Begin:
-                if !otime.add_new_entry_to_file(&file) {
+                if otime.begin(&file) != otime.ERR_OK {
                     fmt.fprintf(os.stderr, "ERROR: Unable to write new entry to \"%s\"\n", file.name);
                 }
 
@@ -158,8 +156,8 @@ main :: proc() {
             case Usage_Mode.Stats :
                 stats(&file);
             case Usage_Mode.Convert : 
-                if otime.validate_as_ctime(&file) {
-                    if !otime.convert_ctime_to_otm1(&file) {
+                if otime.get_file_type(&file) == otime.File_Types.Ctime {
+                    if otime.convert(&file, otime.File_Types.Ctime, otime.File_Types.Otm1) != otime.ERR_OK {
                         fmt.fprintf(os.stderr, "ERROR: Unable to convert ctime file to otm1 file.\n", file.name); 
                     }
                 } else {

@@ -1,0 +1,71 @@
+
+DanishMcDaneface:/mnt/e/Repo/Jaze (dev)$ ctime.exe -stats jaze.otm.old
+
+jaze.otm.old Statistics
+
+Total complete timings: 6329
+Total incomplete timings: 107
+Days with timings: 51
+Days between first and last timing: 216
+Timings marked successful (2701):
+  Slowest: 22.326 seconds
+  Fastest: 0.046 seconds
+  Average: 2.443 seconds
+  Total: 1 hour, 50 minutes, 0.810 seconds
+Timings marked failed (3628):
+  Slowest: 1 minute, 46.796 seconds
+  Fastest: 0.016 seconds
+  Average: 0.609 seconds
+  Total: 36 minutes, 52.238 seconds
+
+All (7.233333 days/bucket):
+|                       *       1 minute, 46.796 seconds
+|                       *
+|                       *
+|                       *
+|                       *
+|                       *
+|                      **
+|                      **
+|     ** *             ***  * *
+|******* *             ********
++------------------------------ 0.000 seconds
+
+|      *                        1019
+|      *
+|*     *
+|*     *
+|*  *  *
+|* *** *                    *
+|* *****                    * *
+|*******                 * ****
+|*******               * * ****
+|******* *             ********
++------------------------------ 0
+
+Recent (1.000000 day/bucket):
+|                            *  22.326 seconds
+|                            *
+|              *             *
+|              *             *
+|              *             *
+|              *             *
+|              *            **
+|  **      * ***  **       ***
+|****      * ***  ***      ****
+|****      * ***  ***      ****
++------------------------------ 0.000 seconds
+
+|              *                220
+|              *
+| *            *
+| *            *            *
+| **           *            *
+| **          **            *
+| **         ***  * *       **
+|***       * ***  ***      ***
+|***       * ***  ***      ****
+|****      * ***  ***      ****
++------------------------------ 0
+
+Total time spent: 2 hours, 26 minutes, 53.048 seconds
