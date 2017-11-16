@@ -6,7 +6,7 @@
  *  @Creation: 13-11-2017 01:06:46
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 16-11-2017 01:55:10
+ *  @Last Time: 16-11-2017 02:32:10
  *  
  *  @Description:
  *      A timing to file library 
@@ -37,6 +37,7 @@ ERR_ENTRY_ALREADY_CLOSED : Err : 3;
 ERR_CONVERT_FAILED       : Err : 4; 
 
 File :: struct {
+    initialized : bool,
     handle : os.Handle,
     name   : string,
     ftype  : File_Types,
@@ -66,6 +67,27 @@ File_Types :: enum {
     Unknown
 }
 
+create_file :: proc(name : string) -> (File, Err) {
+    handle, ok := os.open(name, os.O_RDWR | os.O_CREATE);
+    if ok == os.ERROR_NONE {
+        file := File{};
+        err := add_new_header_to_file(&file);
+        file.initialized = true;
+        return file, err;
+    } else {
+        return File{}, ERR_WRITE_FAILED;
+    }
+}
+
+init_file :: proc(handle : os.Handle, name : string) -> File {
+    file := File{};
+    file.handle = handle;
+    file.name = name;
+    file.ftype = get_file_type(&file);
+    file.initialized = true;
+    return file;
+}
+
 get_file_type :: proc(file : ^File) -> File_Types {
     if header, ok := otm1.validate_as_otm1(file.handle); ok {
         file.header = header;
@@ -79,11 +101,23 @@ get_file_type :: proc(file : ^File) -> File_Types {
     return File_Types.Unknown;
 }
 
-convert :: proc(file : ^File, from : File_Types, to : File_Types) -> Err {
+is_convertable_file :: proc(file : ^File) -> bool {
     using File_Types;
-    if from == Ctime && to == Otm1 {
+    switch file.ftype {
+    case Ctime:
+        return true;
+
+    case:
+        return false;
+    }
+}
+
+convert :: proc(file : ^File, to : File_Types) -> Err {
+    using File_Types;
+    if file.ftype == Ctime && to == Otm1 {
         if ok, header, entries := ctime.convert_to_otm1(file.handle, file.name); ok {
             file.header = header;
+            file.ftype = Otm1;
             write_header_to_file(file);
             for e in entries {
                 write_entry_to_file(file, e);
@@ -95,13 +129,6 @@ convert :: proc(file : ^File, from : File_Types, to : File_Types) -> Err {
     }
 
     return ERR_CONVERT_FAILED;
-}
-
-add_new_header_to_file :: proc(file : ^File) -> Err {
-    file.header = otm1.Header{};
-    file.header.magic = otm1.MAGIC_VALUE;
-
-    return write_header_to_file(file);
 }
 
 begin :: proc(file : ^File) -> Err {
@@ -122,6 +149,14 @@ end :: proc(file : ^File, err : string) -> (err : Err, ms : u32) {
     } else {
         return ERR_OK, ms;
     }
+}
+
+add_new_header_to_file :: proc(file : ^File) -> Err {
+    file.header = otm1.Header{};
+    file.header.magic = otm1.MAGIC_VALUE;
+    file.ftype = File_Types.Otm1;
+
+    return write_header_to_file(file);
 }
 
 add_new_entry_to_file :: proc(file : ^File) -> Err {

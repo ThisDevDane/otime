@@ -6,7 +6,7 @@
  *  @Creation: 13-11-2017 01:07:05
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 16-11-2017 01:55:07
+ *  @Last Time: 16-11-2017 02:37:43
  *  
  *  @Description:
  *      Executable for the otime library. This provides the timing begin, end and stats as we know from Ctime.
@@ -22,6 +22,7 @@ Usage_Mode :: enum {
     End,
     Stats,
     Convert,
+    Unknown,
 }
 
 usage :: proc() {
@@ -97,6 +98,21 @@ stats :: proc(file : ^otime.File) {
     }
 }
 
+get_mode :: proc(arg : string) -> Usage_Mode {
+    switch arg {
+    case "-begin":
+        return Usage_Mode.Begin;
+    case "-end":
+        return Usage_Mode.End;
+    case "-stats":
+        return Usage_Mode.Stats;
+    case "-convert":
+        return Usage_Mode.Convert;
+    }
+
+    return Usage_Mode.Unknown;
+}
+
 main :: proc() {
     make([]u8, 1); //FIXME For some reason it crashes at runtime if this is not here
     args := os.args[1..];
@@ -104,65 +120,53 @@ main :: proc() {
         usage();
         return;
     } else {
-        mode : Usage_Mode;
-        switch args[0] {
-        case "-begin":
-            mode = Usage_Mode.Begin;
-        case "-end":
-            mode = Usage_Mode.End;
-        case "-stats":
-            mode = Usage_Mode.Stats;
-        case "-convert":
-            mode = Usage_Mode.Convert;
-        }
+        mode := get_mode(args[0]);
 
         file : otime.File;
-        file.name = args[1]; //TODO(Hoej): Auto add extension of missing.
-        ok : os.Errno; 
-        file.handle, ok = os.open(file.name, os.O_RDWR);
+        name := args[1]; //TODO(Hoej): Auto add extension of missing.
+        handle, ok := os.open(name, os.O_RDWR);
 
-        if mode != Usage_Mode.Convert {
-            if ok == 0 {
-                if otime.get_file_type(&file) != otime.File_Types.Otm1 {
-                    fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is a otime compatible file.\n", file.name); 
-                    if otime.get_file_type(&file) != otime.File_Types.Ctime {
-                        fmt.fprintf(os.stderr, "ERROR: This is a ctime file, please -convert it to continue usage.\n"); 
-                    }
-                    os.close(file.handle);
-                    file.handle = os.INVALID_HANDLE;
-                }
-            } else if mode == Usage_Mode.Begin {
-                file.handle, ok = os.open(file.name, os.O_RDWR | os.O_CREATE);
-                if ok == 0 {
-                    if otime.add_new_header_to_file(&file) != otime.ERR_OK {
-                        fmt.fprintf(os.stderr, "ERROR: Unable to write header to \"%s\"\n", file.name);
-                    }
-                } else {
+        if ok != os.ERROR_NONE {
+            switch mode {
+            case Usage_Mode.Convert :
+                fmt.fprintf(os.stderr, "ERROR: Unable to convert \"%s\" since it doesn't exist.\n", name);
+                return;
+            case Usage_Mode.Begin : 
+                err : otime.Err;
+                file, err = otime.create_file(name);
+                if err != otime.ERR_OK {
                     fmt.fprintf(os.stderr, "ERROR: Unable to create \"%s\".\n", file.name);
+                    return;
                 }
+            case : 
+                fmt.fprintf(os.stderr, "ERROR: Unable to open \"%s\".\n", file.name);
+                return;
             }
         }
 
-        if file.handle != os.INVALID_HANDLE {
+        if file.initialized {
             switch mode {
             case Usage_Mode.Begin:
                 if otime.begin(&file) != otime.ERR_OK {
                     fmt.fprintf(os.stderr, "ERROR: Unable to write new entry to \"%s\"\n", file.name);
                 }
-
             case Usage_Mode.End:
                 err := len(args) == 3 ? args[2] : "0";
                 end(&file, err);
             case Usage_Mode.Stats :
                 stats(&file);
-            case Usage_Mode.Convert : 
-                if otime.get_file_type(&file) == otime.File_Types.Ctime {
-                    if otime.convert(&file, otime.File_Types.Ctime, otime.File_Types.Otm1) != otime.ERR_OK {
-                        fmt.fprintf(os.stderr, "ERROR: Unable to convert ctime file to otm1 file.\n", file.name); 
-                    }
+            case Usage_Mode.Convert :
+                if !otime.is_convertable_file(&file) {
+                    fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is a convertable file, was %v.\n", file.name, file.ftype); 
+                    break;
+                } 
+                if otime.convert(&file, otime.File_Types.Otm1) != otime.ERR_OK {
+                    fmt.fprintf(os.stderr, "ERROR: Unable to convert ctime file to otm1 file.\n", file.name); 
                 } else {
-                    fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is a ctime compatible file.\n", file.name); 
+                    fmt.fprintf(os.stdout, "OTIME: \"%s\" was converted to %v.\n", file.name, file.ftype);
                 }
+            case : 
+                usage();
             }
         }
 
