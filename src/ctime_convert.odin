@@ -6,7 +6,7 @@
  *  @Creation: 13-11-2017 17:06:40
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 16-11-2017 03:02:24
+ *  @Last Time: 28-11-2017 22:23:34
  *  
  *  @Description:
  *      Functionality requires to convert ctime files to otm1 files
@@ -100,7 +100,6 @@ convert_to_otm1 :: proc(file_handle : os.Handle, name : string) -> (Err, otm1.He
     
     raw_entries := raw.Slice{
         &entries_bytes[0],
-        len(entries_bytes) / size_of(Entry),
         len(entries_bytes) / size_of(Entry),
     };
     c_entries := transmute([]Entry)raw_entries;

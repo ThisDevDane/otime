@@ -6,15 +6,19 @@
  *  @Creation: 13-11-2017 01:06:46
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 16-11-2017 03:02:40
+ *  @Last Time: 28-11-2017 22:56:32
  *  
  *  @Description:
  *      A timing to file library 
  *
- * J_vanRijn suggestion
+ * SUGGESTION(J_vanRijn):
  *  If you changed that to `otime.begin('site')`, `otime.end('site')` and `otime.flush()`, 
  *  you could have it build up a bunch of metrics for calls to a site and then explicitly flush, 
  *  which the compilation driver would do or end might take an optional param that tells it to flush
+ *
+ * TODO(Hoej): Change error handling to be like add_new_header_to_file(file, &err); that way we can just 
+ *             handle the err at the end, since each function will just return like fabian showed, main functions 
+ *             should still return an Err
  */
 
 import       "core:os.odin";
@@ -64,8 +68,15 @@ create_file :: proc(name : string) -> (File, Err) {
     handle, ok := os.open(name, os.O_RDWR | os.O_CREATE);
     if ok == os.ERROR_NONE {
         file := File{};
+        file.handle = handle;
+        file.name = name;
         err := add_new_header_to_file(&file);
-        file.initialized = true;
+        if err == ERR_READ_FAILED {
+            err = ERR_OK;
+        }
+        if err == ERR_OK {
+            file.initialized = true;
+        }
         return file, err;
     } else {
         return File{}, ERR_WRITE_FAILED;
@@ -128,13 +139,14 @@ begin :: proc(file : ^File) -> Err {
     return add_new_entry_to_file(file);
 }
 
+//TODO(Hoej): Cache time earlier so we don't wait for File IO before time measurement
 end :: proc(file : ^File, err : string) -> (err : Err, ms : u32) {
     entry, read_ok := read_last_entry_from_file(file);
     if !read_ok {
         return ERR_READ_FAILED, 0;
     }
 
-    already_closed, write_ok, ms :=close_last_entry_in_file(file, entry, err);
+    already_closed, write_ok, ms := close_last_entry_in_file(file, entry, err);
     if already_closed  {
         return ERR_ENTRY_ALREADY_CLOSED, 0;
     } else if !write_ok {
@@ -155,12 +167,12 @@ add_new_header_to_file :: proc(file : ^File) -> Err {
 add_new_entry_to_file :: proc(file : ^File) -> Err {
     entry := otm1.Entry{};
     
+    entry.time_elapsed = win32.time_get_time();
+    
     ft : win32.Filetime;
     win32.get_system_time_as_file_time(&ft);
-
     entry.date_raw[0] = ft.lo;
     entry.date_raw[1] = ft.hi;
-    entry.time_elapsed = win32.time_get_time();
 
     return write_entry_to_file(file, entry);
 }
@@ -272,7 +284,6 @@ read_all_entries_from_file :: proc(file : ^File) -> ([]otm1.Entry, bool) {
     raw_entries := raw.Slice{
         &buf[0],
         len(buf) / size_of(otm1.Entry),
-        len(buf) / size_of(otm1.Entry),
     };
         
     return transmute([]otm1.Entry)raw_entries, true;
@@ -344,7 +355,6 @@ transform_to_bytes :: proc(ptr : rawptr, size : int) -> []u8 {
     buf_raw := raw.Slice {
         ptr,
         size,
-        size
     };
     buf := transmute([]u8)buf_raw;
     return buf;

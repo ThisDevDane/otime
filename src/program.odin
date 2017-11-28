@@ -6,7 +6,7 @@
  *  @Creation: 13-11-2017 01:07:05
  *
  *  @Last By:   Mikkel Hjortshoej
- *  @Last Time: 16-11-2017 02:37:43
+ *  @Last Time: 28-11-2017 22:57:27
  *  
  *  @Description:
  *      Executable for the otime library. This provides the timing begin, end and stats as we know from Ctime.
@@ -25,7 +25,11 @@ Usage_Mode :: enum {
     Unknown,
 }
 
-usage :: proc() {
+usage :: proc(wrong := "") {
+    if wrong != "" {
+        fmt.fprintf(os.stderr, "%s is not a recognized command\n", wrong);
+    }
+
     fmt.fprintf( os.stderr, "Otime %s by Mikkel Hjortshoej\n", otime.VERSION_STR);
     fmt.fprintln(os.stderr, "Usage:");
     fmt.fprintln(os.stderr, "    otime -begin   <timing file>");
@@ -122,6 +126,11 @@ main :: proc() {
     } else {
         mode := get_mode(args[0]);
 
+        if mode == Usage_Mode.Unknown {
+            usage(args[0]);
+            return;
+        }
+
         file : otime.File;
         name := args[1]; //TODO(Hoej): Auto add extension of missing.
         handle, ok := os.open(name, os.O_RDWR);
@@ -134,26 +143,48 @@ main :: proc() {
             case Usage_Mode.Begin : 
                 err : otime.Err;
                 file, err = otime.create_file(name);
+                switch err {
+                case otime.ERR_WRITE_FAILED :
+                    fmt.fprintf(os.stderr, "ERROR: Unable to write header to \"%s\".\n", file.name); 
+                case otime.ERR_READ_FAILED :
+                    fmt.fprintf(os.stderr, "ERROR: Unable to seek in \"%s\".\n", file.name); 
+                }
                 if err != otime.ERR_OK {
                     fmt.fprintf(os.stderr, "ERROR: Unable to create \"%s\".\n", file.name);
                     return;
                 }
             case : 
-                fmt.fprintf(os.stderr, "ERROR: Unable to open \"%s\".\n", file.name);
+                fmt.fprintf(os.stderr, "ERROR: Unable to open \"%s\".\n", name);
                 return;
             }
+        }
+
+        if !file.initialized {
+            file = otime.init_file(handle, name);
         }
 
         if file.initialized {
             switch mode {
             case Usage_Mode.Begin:
+                if file.ftype != otime.File_Types.Otm1 {
+                    fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is a otm1 file, was %v.\n", file.name, file.ftype); 
+                    return;
+                }
                 if otime.begin(&file) != otime.ERR_OK {
                     fmt.fprintf(os.stderr, "ERROR: Unable to write new entry to \"%s\"\n", file.name);
                 }
             case Usage_Mode.End:
+                if file.ftype != otime.File_Types.Otm1 {
+                    fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is a otm1 file, was %v.\n", file.name, file.ftype); 
+                    return;
+                }
                 err := len(args) == 3 ? args[2] : "0";
                 end(&file, err);
             case Usage_Mode.Stats :
+                if file.ftype != otime.File_Types.Otm1 {
+                    fmt.fprintf(os.stderr, "ERROR: Unable to verify that \"%s\" is a otm1 file, was %v.\n", file.name, file.ftype); 
+                    return;
+                }
                 stats(&file);
             case Usage_Mode.Convert :
                 if !otime.is_convertable_file(&file) {
@@ -168,6 +199,8 @@ main :: proc() {
             case : 
                 usage();
             }
+        } else {
+            fmt.fprintf(os.stderr, "ERROR: Unable to open/initialize \"%s\"\n", name);
         }
 
         os.close(file.handle);
