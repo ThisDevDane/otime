@@ -1,5 +1,6 @@
 <p align="center">
     <img src="https://otime.handmade.network/static/media/projects/dark-logo/otime.png?v=71663" alt="Otime logo" height=300px/>
+    <br/>
     This program is a spirital successor for Casey Muratori's Ctime written in Odin
     <br/>
     <br/>
