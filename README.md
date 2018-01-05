@@ -1,5 +1,19 @@
-![scrshot](https://otime.handmade.network/static/media/projects/dark-logo/otime.png?v=71663)  
-This program is a spirital successor for Casey Muratori's Ctime written in Odin
+<p align="center">
+    <img src="https://otime.handmade.network/static/media/projects/dark-logo/otime.png?v=71663" alt="Otime logo" height=300px/>
+    This program is a spirital successor for Casey Muratori's Ctime written in Odin
+    <br/>
+    <br/>
+    <a href="https://github.com/ThisDrunkDane/otime/releases/latest">
+        <img src="https://img.shields.io/github/release/thisdrunkdane/otime.svg">
+    </a>
+    <a href="https://github.com/ThisDrunkDane/otime/releases/latest">
+        <img src="https://img.shields.io/badge/Platforms-Windows-green.svg">
+    </a>
+    <a href="https://github.com/ThisDrunkDane/otime/blob/master/LICENSE">
+        <img src="https://img.shields.io/github/license/thisdrunkdane/otime.svg">
+    </a>
+</p>
+
 ```
 otime -stats jaze.otm
 
